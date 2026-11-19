@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Neon Circuit — 3D Racer</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827;color:#fff;font-family:system-ui,Arial}
+#game{position:fixed;inset:0}canvas{display:block}
+#hud{position:fixed;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;pointer-events:none;gap:10px}
+.panel{background:#101827cc;border:1px solid #ffffff30;border-radius:14px;padding:10px 14px;backdrop-filter:blur(8px);box-shadow:0 5px 20px #0005}
+.big{font-size:25px;font-weight:900;line-height:1.1}.small{font-size:11px;color:#a9c0d7;letter-spacing:1.4px;font-weight:700}
+#right{text-align:right}#message{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);text-align:center;font-size:clamp(24px,5vw,48px);font-weight:1000;text-shadow:0 4px 20px #000;pointer-events:none}
+#sub{font-size:14px;color:#d4e6f6;font-weight:600}
+#controls{position:fixed;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;align-items:end;padding:0 18px;pointer-events:none}
+.cluster{display:flex;gap:10px;pointer-events:auto}.ctrl{width:66px;height:66px;border-radius:18px;border:1px solid #ffffff55;background:#172a42cc;color:white;font-size:25px;font-weight:900;box-shadow:0 5px 0 #09111d;touch-action:none;user-select:none}
+.ctrl:active,.ctrl.on{background:#13b9cf;color:#06121a;transform:translateY(3px);box-shadow:0 2px 0 #09111d}
+#gas{width:76px;height:82px;background:#10a878cc}#brake{background:#c34d5dcc}
+#start{position:fixed;left:50%;top:55%;transform:translate(-50%,-50%);border:0;border-radius:14px;padding:14px 28px;background:#13c5d9;color:#06131c;font-size:18px;font-weight:1000;box-shadow:0 6px 0 #087e91}
+#help{position:fixed;bottom:112px;left:50%;transform:translateX(-50%);font-size:12px;color:#d7e6f3;text-align:center;text-shadow:0 2px 5px #000;white-space:nowrap}
+@media(min-width:850px){#controls{opacity:.75}.ctrl{width:58px;height:58px}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+ <div class="panel"><div class="small">SPEED</div><div class="big"><span id="speed">0</span> <span style="font-size:12px">KM/H</span></div></div>
+ <div class="panel" id="right"><div class="small">LAP / TIME</div><div class="big"><span id="lap">1</span>/3</div><div id="timer">00:00.0</div></div>
+</div>
+<div id="message">NEON CIRCUIT<div id="sub">A LOW-POLY 3D RACING GAME</div></div>
+<button id="start">START RACE</button>
+<div id="help">WASD / ARROW KEYS • Touch controls below</div>
+<div id="controls">
+ <div class="cluster"><button class="ctrl" data-key="left">◀</button><button class="ctrl" data-key="right">▶</button></div>
+ <div class="cluster"><button class="ctrl" id="brake" data-key="brake">▼</button><button class="ctrl" id="gas" data-key="gas">▲</button></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+<script>
+(()=>{
+const root=document.getElementById('game');
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x83c9e8);scene.fog=new THREE.Fog(0x83c9e8,90,270);
+const camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.1,500);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;root.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xdaf4ff,0x536348,2.0));
+const sun=new THREE.DirectionalLight(0xffffff,2.1);sun.position.set(-35,65,25);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+const mat=(c,r=.8)=>new THREE.MeshStandardMaterial({color:c,roughness:r});
+const grass=mat(0x55a75e),road=mat(0x303844),edgeA=mat(0xeff4f4),edgeB=mat(0xf04d64),white=mat(0xffffff),dark=mat(0x17202a),cyan=mat(0x17d7e9),orange=mat(0xff9b38);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(600,600),grass);ground.rotation.x=-Math.PI/2;ground.position.y=-.28;ground.receiveShadow=true;scene.add(ground);
+const points=[];const N=500;
+for(let i=0;i< N;i++){let a=i/N*Math.PI*2;let rad=43+7*Math.sin(3*a)+4*Math.cos(5*a);points.push(new THREE.Vector3(Math.cos(a)*rad,0,Math.sin(a)*rad*0.78));}
+const curve=new THREE.CatmullRomCurve3(points,true,'catmullrom',.5);
+function ribbon(width,y,material,offset=0){
+ let verts=[],inds=[];const steps=700;
+ for(let i=0;i<=steps;i++){let t=i/steps,p=curve.getPointAt(t),tan=curve.getTangentAt(t),side=new THREE.Vector3(-tan.z,0,tan.x).normalize();
+ p.addScaledVector(side,offset);verts.push(p.x+side.x*width/2,y,p.z+side.z*width/2,p.x-side.x*width/2,y,p.z-side.z*width/2);
+ if(i<steps){let k=i*2;inds.push(k,k+1,k+2,k+1,k+3,k+2)}}
+ let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setIndex(inds);g.computeVertexNormals();let m=material.clone();m.side=THREE.DoubleSide;let mesh=new THREE.Mesh(g,m);mesh.receiveShadow=true;scene.add(mesh);return mesh;
+}
+ribbon(13,.0,road);ribbon(1.1,.025,edgeA,7.05);ribbon(1.1,.025,edgeB,-7.05);
+ribbon(.22,.035,white,0);
+function box(w,h,d,m,x,y,z){let o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);return o}
+for(let i=0;i<90;i++){let t=i/90,p=curve.getPointAt(t),tan=curve.getTangentAt(t),side=new THREE.Vector3(-tan.z,0,tan.x).normalize();for(let s of [-1,1]){let q=p.clone().addScaledVector(side,s*8.2);box(.55,.65,1.5,i%2?edgeA:edgeB,q.x,.32,q.z)}}
+for(let i=0;i<55;i++){let t=(i+.35)/55,p=curve.getPointAt(t),tan=curve.getTangentAt(t),side=new THREE.Vector3(-tan.z,0,tan.x).normalize();let q=p.clone().addScaledVector(side, (i%2?1:-1)*(15+Math.random()*18));let h=2+Math.random()*7;let tree= new THREE.Group();let trunk=new THREE.Mesh(new THREE.CylinderGeometry(.22,.35,1.5,5),mat(0x755039));trunk.position.y=.75;tree.add(trunk);let crown=new THREE.Mesh(new THREE.ConeGeometry(1.5,h/2,5),mat([0x28734a,0x388b51,0x236747][i%3]));crown.position.y=1.5+h/2;tree.add(crown);tree.position.set(q.x,0,q.z);tree.rotation.y=Math.random()*6;scene.add(tree)}
+// distant angular hills
+for(let i=0;i<36;i++){let a=i/36*Math.PI*2,r=115+Math.random()*35,h=13+Math.random()*25;let m=new THREE.Mesh(new THREE.ConeGeometry(13+Math.random()*9,h,5),mat(i%2?0x6d9d9a:0x779f9d));m.position.set(Math.cos(a)*r,h/2-1,Math.sin(a)*r);m.rotation.y=Math.random()*3;scene.add(m)}
+// start/finish gantry
+let startP=curve.getPointAt(0),startTan=curve.getTangentAt(0),startSide=new THREE.Vector3(-startTan.z,0,startTan.x).normalize();
+for(let s of [-1,1]){let q=startP.clone().addScaledVector(startSide,s*6.2);box(.6,5,.6,dark,q.x,2.5,q.z)}
+box(13,.7,.7,cyan,startP.x,5,startP.z);
+for(let i=0;i<16;i++)box(.8,.05,.8,i%2?white:dark,startP.x+(i-7.5)*.8, .06,startP.z);
+// car
+const car=new THREE.Group();scene.add(car);
+boxCar();
+function boxCar(){
+ let body=new THREE.Mesh(new THREE.BoxGeometry(2.05,.62,3.7),cyan);body.position.y=.78;body.castShadow=true;car.add(body);
+ let nose=new THREE.Mesh(new THREE.BoxGeometry(1.8,.22,1.05),orange);nose.position.set(0,.78,-1.95);car.add(nose);
+ let cabin=new THREE.Mesh(new THREE.BoxGeometry(1.35,.72,1.55),mat(0x182e48,.25));cabin.position.set(0,1.35,.05);cabin.castShadow=true;car.add(cabin);
+ let roof=new THREE.Mesh(new THREE.BoxGeometry(1.25,.12,1.35),cyan);roof.position.set(0,1.75,.05);car.add(roof);
+ for(let x of [-1,1])for(let z of [-1.15,1.15]){let w=new THREE.Mesh(new THREE.CylinderGeometry(.43,.43,.28,12),dark);w.rotation.z=Math.PI/2;w.position.set(x*1.03,.48,z);car.add(w)}
+ for(let x of [-.68,.68]){let l=new THREE.Mesh(new THREE.BoxGeometry(.42,.16,.08),white);l.position.set(x,.88,-1.88);car.add(l)}
+}
+let pos=curve.getPointAt(.005);car.position.set(pos.x,0,pos.z);let heading=Math.atan2(startTan.x,startTan.z);car.rotation.y=heading;
+let keys={left:false,right:false,gas:false,brake:false};let running=false,finished=false,speed=0,lap=1,elapsed=0,last=performance.now(),lapStart=0,best=0,lastProgress=.005,checkpoint=0,offroad=0;
+const $=id=>document.getElementById(id);
+function setKey(k,v){keys[k]=v;document.querySelectorAll('[data-key="'+k+'"]').forEach(b=>b.classList.toggle('on',v))}
+addEventListener('keydown',e=>{let k={ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right',ArrowUp:'gas',w:'gas',ArrowDown:'brake',s:'brake'}[e.key];if(k){e.preventDefault();setKey(k,true)}});
+addEventListener('keyup',e=>{let k={ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right',ArrowUp:'gas',w:'gas',ArrowDown:'brake',s:'brake'}[e.key];if(k)setKey(k,false)});
+document.querySelectorAll('[data-key]').forEach(b=>{let k=b.dataset.key;b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);setKey(k,true)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>setKey(k,false)))});
+function nearest(p){let bestT=0,bestD=1e9;for(let i=0;i<400;i++){let t=i/400,q=curve.getPointAt(t),d=q.distanceTo(p);if(d<bestD){bestD=d;bestT=t}}return {t:bestT,d:bestD}}
+function fmt(s){let m=Math.floor(s/60),sec=(s%60).toFixed(1).padStart(4,'0');return String(m).padStart(2,'0')+':'+sec}
+$('start').onclick=()=>{running=true;finished=false;elapsed=0;lap=1;lapStart=0;speed=0;last=performance.now();$('start').style.display='none';$('message').innerHTML='';};
+function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/1000,.04);last=now;
+ if(running&&!finished){elapsed+=dt;let accel=keys.gas?27:0;speed+=accel*dt;speed-= (keys.brake?48:10)*dt;speed=THREE.MathUtils.clamp(speed,0,68);
+ let steer=(keys.left?1:0)-(keys.right?1:0);heading+=steer*dt*(.65+speed*.025);
+ let forward=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));car.position.addScaledVector(forward,-speed*dt*.43);car.rotation.y=heading;
+ let near=nearest(car.position);offroad=near.d>6.4?1:0;if(offroad)speed=Math.max(0,speed-22*dt);
+ let p=near.t;if(p<.08&&lastProgress>.88&&checkpoint>=4){lap++;lapStart=elapsed;checkpoint=0;if(lap>3){finished=true;running=false;$('message').innerHTML='RACE COMPLETE!<div id="sub">TIME '+fmt(elapsed)+'</div>';$('start').textContent='RACE AGAIN';$('start').style.display='block'}}else if(p>lastProgress+.002){checkpoint=Math.max(checkpoint,Math.floor(p*5));}lastProgress=p;
+ $('speed').textContent=Math.round(speed*3.1);$('lap').textContent=Math.min(lap,3);$('timer').textContent=fmt(elapsed);
+ }
+ let fwd=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));let target=car.position.clone().addScaledVector(fwd,7);target.y=2.4;let cam=car.position.clone().addScaledVector(fwd, -10);cam.y=6.2;camera.position.lerp(cam,.09);camera.lookAt(target);
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(animate);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+})();
+</script>
+</body></html>
